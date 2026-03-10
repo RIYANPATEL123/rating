@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TruthIn Live - Health Auditor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>:root {
+            --truth-red: #e63946; --truth-amber: #ffb703; --truth-green: #2a9d8f;
+            --dark: #1d3557; --light: #f1faee;
+        }
+
+        body { font-family: 'Inter', sans-serif; background: #f8f9fa; color: var(--dark); margin: 0; padding: 20px; }
+        .container { max-width: 480px; margin: 0 auto; }
+
+        /* Search Interface */
+        .search-container { position: relative; margin-bottom: 25px; }
+        #pInput { 
+            width: 100%; padding: 18px; border-radius: 15px; border: 2px solid #e0e0e0;
+            font-size: 16px; outline: none; transition: 0.3s; box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+        #pInput:focus { border-color: var(--truth-red); box-shadow: 0 0 10px rgba(230, 57, 70, 0.1); }
+        
+        #suggestions {
+            position: absolute; width: 100%; background: white; border-radius: 12px;
+            top: 65px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: none;
+            max-height: 250px; overflow-y: auto;
+        }
+        .s-item { padding: 12px 15px; border-bottom: 1px solid #f0f0f0; cursor: pointer; display: flex; align-items: center; gap: 15px; }
+        .s-item:hover { background: #f9f9f9; }
+        .s-item img { width: 40px; height: 40px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid #eee; }
+        .s-item:last-child { border: none; }
+
+        /* Product Card */
+        .card { 
+            background: white; border-radius: 25px; padding: 30px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.05); display: none;
+            text-align: center;
+        }
+
+        .score-display { margin: 20px 0; }
+        .score-circle {
+            width: 100px; height: 100px; border-radius: 50%; border: 8px solid #eee;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto; font-size: 32px; font-weight: 900; transition: color 0.3s, border-color 0.3s;
+        }
+
+        .verdict-tag { 
+            display: inline-block; padding: 6px 15px; border-radius: 20px; 
+            font-weight: bold; font-size: 12px; margin-top: 10px; text-transform: uppercase;
+        }
+
+        /* Nutrient Breakdown */
+        .breakdown { 
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 25px 0;
+            text-align: left;
+        }
+        .b-item { background: #fdfdfd; padding: 10px; border: 1px solid #f0f0f0; border-radius: 12px; }
+        .b-item small { font-size: 10px; color: #888; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+        .b-item b { font-size: 14px; }
+
+        /* Warning List */
+        .warnings { text-align: left; background: #fff5f5; padding: 15px; border-radius: 15px; border: 1px solid #ffe3e3; }
+        .w-title { font-size: 12px; font-weight: bold; color: var(--truth-red); margin-bottom: 8px; display: block; }
+        .w-text { font-size: 13px; line-height: 1.5; color: #555; }
+        
+        .p-image { width: 140px; height: 140px; object-fit: contain; margin-bottom: 15px; border-radius: 12px; }
+        .loading-text { font-size: 14px; color: #888; text-align: center; padding: 15px; }</style>
+</head>
+<body>
+
+<div class="container">
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="margin: 0; color: var(--truth-red);">TruthIn <span style="font-size: 14px; color: #888; font-weight: normal;">LIVE</span></h1>
+        <p style="margin: 5px 0; font-size: 14px; color: #666;">Powered by Open Food Facts API</p>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="pInput" placeholder="Search any product globally..." autocomplete="off">
+        <div id="suggestions"></div>
+    </div>
+
+    <div id="card" class="card">
+        <img id="p-img" src="" class="p-image">
+        <h2 id="p-name" style="margin: 0 0 5px 0;"></h2>
+        <span id="p-cat" style="color: #888; font-size: 13px;"></span>
+
+        <div class="score-display">
+            <div id="score-circle" class="score-circle">0.0</div>
+            <div id="v-tag" class="verdict-tag"></div>
+        </div>
+
+        <div class="breakdown">
+            <div class="b-item"><small>ENERGY</small><b id="eng"></b></div>
+            <div class="b-item"><small>TOTAL SUGAR</small><b id="ts"></b></div>
+            <div class="b-item"><small>ADDED SUGAR</small><b id="as" style="color: var(--truth-red);"></b></div>
+            <div class="b-item"><small>SAT. FAT</small><b id="fat"></b></div>
+            <div class="b-item"><small>SODIUM</small><b id="sod"></b></div>
+            <div class="b-item"><small>ADDITIVES</small><b id="add"></b></div>
+        </div>
+
+        <div class="warnings">
+            <span class="w-title">WHY THIS RATING?</span>
+            <div id="w-list" class="w-text"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // THE LOCAL DATABASE (Instant Access)
+    // Data is approximate per 100g / 100ml
+    const db = [
+        // --- BISCUITS ---
+        { name: "Oreo Original", cat: "Biscuits", energy: 480, totalSugar: 38.0, addedSugar: 37.5, fat: 20.2, sodium: 520, protein: 4.8, additives: ["Emulsifier", "Leavening Agent", "Synthetic Flavour"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/003366/fff?text=Oreo" },
+        { name: "Parle-G", cat: "Biscuits", energy: 450, totalSugar: 25.5, addedSugar: 24.0, fat: 13.0, sodium: 300, protein: 6.5, additives: ["Artificial Flavour", "Raising Agent"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/f1c40f/000?text=Parle-G" },
+        { name: "Britannia Good Day", cat: "Biscuits", energy: 500, totalSugar: 22.0, addedSugar: 21.0, fat: 23.0, sodium: 280, protein: 7.0, additives: ["Emulsifier", "Artificial Flavour"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/e67e22/fff?text=Good+Day" },
+        { name: "Sunfeast Dark Fantasy", cat: "Biscuits", energy: 510, totalSugar: 36.0, addedSugar: 35.0, fat: 26.0, sodium: 200, protein: 5.0, additives: ["Emulsifier", "Artificial Vanilla"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/3e2723/fff?text=Dark+Fantasy" },
+        { name: "McVitie's Digestive", cat: "Biscuits", energy: 470, totalSugar: 16.6, addedSugar: 15.0, fat: 21.3, sodium: 500, protein: 7.1, additives: ["Raising Agents"], processing: "Processed (NOVA 3)", img: "https://placehold.co/200x200/c0392b/fff?text=Digestive" },
+
+        // --- CHOCOLATES ---
+        { name: "KitKat", cat: "Chocolates", energy: 518, totalSugar: 45.0, addedSugar: 43.0, fat: 24.5, sodium: 150, protein: 6.5, additives: ["Emulsifier", "Artificial Vanillin"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/e74c3c/fff?text=KitKat" },
+        { name: "Cadbury Dairy Milk", cat: "Chocolates", energy: 530, totalSugar: 56.0, addedSugar: 45.0, fat: 30.5, sodium: 140, protein: 7.5, additives: ["Emulsifier 442", "Emulsifier 476", "Flavouring"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/4a235a/fff?text=Dairy+Milk" },
+        { name: "Snickers", cat: "Chocolates", energy: 488, totalSugar: 51.8, addedSugar: 49.0, fat: 23.8, sodium: 215, protein: 8.6, additives: ["Artificial Flavour"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/5d4037/fff?text=Snickers" },
+        { name: "Ferrero Rocher", cat: "Chocolates", energy: 603, totalSugar: 39.9, addedSugar: 38.0, fat: 42.7, sodium: 60, protein: 8.2, additives: ["Emulsifier (Soy Lecithin)", "Vanillin"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/d4af37/000?text=Ferrero" },
+        { name: "Milkybar", cat: "Chocolates", energy: 535, totalSugar: 54.0, addedSugar: 43.0, fat: 29.5, sodium: 180, protein: 8.0, additives: ["Emulsifier", "Artificial Flavour"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/fdf5e6/000?text=Milkybar" },
+
+        // --- WAFERS & CHIPS ---
+        { name: "Lays Classic Salted", cat: "Snacks & Chips", energy: 536, totalSugar: 1.0, addedSugar: 0.0, fat: 35.0, sodium: 550, protein: 6.0, additives: [], processing: "Processed (NOVA 3)", img: "https://placehold.co/200x200/f1c40f/000?text=Lays+Classic" },
+        { name: "Lays Magic Masala", cat: "Snacks & Chips", energy: 540, totalSugar: 4.0, addedSugar: 2.5, fat: 34.0, sodium: 700, protein: 6.5, additives: ["Flavour Enhancer 627", "Flavour Enhancer 631", "Anti-caking agent"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/2980b9/fff?text=Lays+Masala" },
+        { name: "Doritos Nacho Cheese", cat: "Snacks & Chips", energy: 499, totalSugar: 2.5, addedSugar: 1.0, fat: 26.0, sodium: 650, protein: 7.0, additives: ["Maltodextrin", "Flavour Enhancers", "Artificial Colours"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/e67e22/fff?text=Doritos" },
+        { name: "Kurkure Masala Munch", cat: "Snacks & Chips", energy: 550, totalSugar: 2.0, addedSugar: 1.0, fat: 35.0, sodium: 830, protein: 6.0, additives: ["Flavour Enhancers"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/c0392b/fff?text=Kurkure" },
+        { name: "Pringles Original", cat: "Snacks & Chips", energy: 514, totalSugar: 1.2, addedSugar: 0.0, fat: 33.0, sodium: 460, protein: 4.0, additives: ["Emulsifier 471"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/e74c3c/fff?text=Pringles" },
+
+        // --- SOFT DRINKS (Per 100ml) ---
+        { name: "Coca-Cola", cat: "Beverages", energy: 42, totalSugar: 10.6, addedSugar: 10.6, fat: 0.0, sodium: 10, protein: 0.0, additives: ["Colour 150d", "Phosphoric Acid", "Caffeine"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/c0392b/fff?text=Coca-Cola" },
+        { name: "Pepsi", cat: "Beverages", energy: 43, totalSugar: 10.9, addedSugar: 10.9, fat: 0.0, sodium: 11, protein: 0.0, additives: ["Colour 150d", "Phosphoric Acid", "Caffeine"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/2980b9/fff?text=Pepsi" },
+        { name: "Sprite", cat: "Beverages", energy: 40, totalSugar: 10.0, addedSugar: 10.0, fat: 0.0, sodium: 15, protein: 0.0, additives: ["Acidity Regulators", "Preservative"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/27ae60/fff?text=Sprite" },
+        { name: "Thums Up", cat: "Beverages", energy: 40, totalSugar: 10.0, addedSugar: 10.0, fat: 0.0, sodium: 15, protein: 0.0, additives: ["Colour 150d", "Caffeine", "Acidity Regulator"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/8e44ad/fff?text=Thums+Up" },
+        { name: "Fanta", cat: "Beverages", energy: 45, totalSugar: 11.5, addedSugar: 11.5, fat: 0.0, sodium: 10, protein: 0.0, additives: ["Synthetic Colour", "Acidity Regulators", "Preservative"], processing: "Ultra-Processed (NOVA 4)", img: "https://placehold.co/200x200/e67e22/fff?text=Fanta" }
+    ];
+
+    const input = document.getElementById('pInput');
+    const suggestBox = document.getElementById('suggestions');
+    let currentSuggestions = [];
+
+    // Instant Local Search
+    input.addEventListener('input', () => {
+        const query = input.value.trim().toLowerCase();
+        
+        if (!query) {
+            suggestBox.style.display = 'none';
+            currentSuggestions = [];
+            return;
+        }
+
+        // Search the DB array instantly (0ms latency!)
+        currentSuggestions = db.filter(item => 
+            item.name.toLowerCase().includes(query) || 
+            item.cat.toLowerCase().includes(query)
+        );
+
+        renderSuggestions(currentSuggestions);
+    });
+
+    // Enter Key Support
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); 
+            if (currentSuggestions.length > 0) {
+                const bestMatch = currentSuggestions[0];
+                input.value = bestMatch.name;
+                calculateTIRS(bestMatch);
+                suggestBox.style.display = 'none';
+                input.blur(); 
+            }
+        }
+    });
+
+    function renderSuggestions(products) {
+        suggestBox.innerHTML = '';
+        
+        if (products.length === 0) {
+            suggestBox.innerHTML = '<div class="loading-text">No products found.</div>';
+            suggestBox.style.display = 'block';
+            return;
+        }
+
+        products.forEach(product => {
+            const div = document.createElement('div');
+            div.className = 's-item';
+            div.innerHTML = `
+                <img src="${product.img}" alt="img">
+                <div style="text-align: left;">
+                    <b style="display: block; font-size: 14px;">${product.name}</b>
+                    <small style="color: #888; font-size: 11px;">${product.cat}</small>
+                </div>
+            `;
+            
+            div.onclick = () => { 
+                input.value = product.name; 
+                calculateTIRS(product); 
+                suggestBox.style.display = 'none'; 
+            };
+            suggestBox.appendChild(div);
+        });
+        
+        suggestBox.style.display = 'block';
+    }
+
+    // TIRS Algorithm
+    function calculateTIRS(p) {
+        let score = 3.5; 
+        let warnings = [];
+
+        if(p.energy > 400) warnings.push(`High energy density (${p.energy} kcal).`);
+        
+        if(p.addedSugar > 10) {
+            score -= ((p.addedSugar - 10) / 5) * 0.45;
+            warnings.push(`High Added Sugar (~${p.addedSugar}g).`);
+        }
+
+        if(p.additives.length > 0) {
+            score -= (p.additives.length * 0.3);
+            warnings.push(`Contains ${p.additives.length} industrial additives.`);
+        }
+
+        if(p.processing.includes("NOVA 4")) {
+            score -= 0.8;
+            warnings.push("Ultra-processed food (UPF) category.");
+        }
+
+        if(p.sodium > 400) warnings.push(`High sodium (${p.sodium}mg).`);
+        if(p.protein > 8) score += 0.2;
+
+        score = Math.max(0.9, Math.min(5, score)).toFixed(1);
+
+        // Update UI
+        document.getElementById('card').style.display = 'block';
+        document.getElementById('p-name').innerText = p.name;
+        document.getElementById('p-cat').innerText = p.cat;
+        document.getElementById('p-img').src = p.img;
+        
+        document.getElementById('eng').innerText = p.energy + " kcal";
+        document.getElementById('ts').innerText = p.totalSugar + "g";
+        document.getElementById('as').innerText = p.addedSugar + "g";
+        document.getElementById('fat').innerText = p.fat + "g";
+        document.getElementById('sod').innerText = p.sodium + "mg";
+        document.getElementById('add').innerText = p.additives.length;
+        
+        document.getElementById('w-list').innerHTML = warnings.length > 0 
+            ? warnings.map(w => `• ${w}<br>`).join("") 
+            : "• Clean ingredient profile. Good choice!";
+        
+        const circle = document.getElementById('score-circle');
+        const tag = document.getElementById('v-tag');
+        circle.innerText = score;
+
+        if(score <= 1.5) {
+            circle.style.borderColor = varProp('--truth-red');
+            circle.style.color = varProp('--truth-red');
+            tag.innerText = "Avoid";
+            tag.style.background = "#ffe3e3"; tag.style.color = varProp('--truth-red');
+        } else if(score < 3.5) {
+            circle.style.borderColor = varProp('--truth-amber');
+            circle.style.color = varProp('--truth-amber');
+            tag.innerText = "Moderate";
+            tag.style.background = "#fff3cd"; tag.style.color = "#856404";
+        } else {
+            circle.style.borderColor = varProp('--truth-green');
+            circle.style.color = varProp('--truth-green');
+            tag.innerText = "Healthy";
+            tag.style.background = "#d1e7dd"; tag.style.color = varProp('--truth-green');
+        }
+    }
+
+    function varProp(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+</script>
+
+</body>
+</html>
